@@ -138,6 +138,12 @@ export function submitVote(io, room, voterId, votedId) {
     votedCount: room.round.votes.size,
     total,
   });
+
+  // Everyone's in — no need to wait out the clock.
+  if (total > 0 && room.round.votes.size >= total) {
+    room.clearTimer();
+    onVoteEnd(io, room);
+  }
 }
 
 function tallyVotes(round) {
@@ -161,22 +167,41 @@ function tallyVotes(round) {
   return topId;
 }
 
+const VOTE_REVEAL_PAUSE_MS = 3500;
+
 function onVoteEnd(io, room) {
   room.clearTimer();
   const round = room.round;
   const accusedId = tallyVotes(round);
-  const caught = accusedId === round.imposterId;
+  const accused = accusedId ? room.players.get(accusedId) : null;
+  const caught = accusedId !== null && accusedId === round.imposterId;
+  const isLastQuadrant = round.quadrant >= 4;
 
-  if (caught) {
-    endRound(io, room, 'caught', accusedId);
-    return;
-  }
+  room.phase = 'voteResult';
 
-  if (round.quadrant < 4) {
-    advanceToQuadrant(io, room, round.quadrant + 1);
-  } else {
-    endRound(io, room, 'escaped', accusedId);
-  }
+  const voteResultPayload = {
+    accusedId: accusedId || null,
+    accusedName: accused ? accused.name : null,
+    accusedColorKey: accused ? accused.colorKey : null,
+    wasImposter: caught,
+    noMajority: accusedId === null,
+    quadrant: round.quadrant,
+    isLastQuadrant,
+  };
+  round.lastVoteResult = voteResultPayload;
+
+  toRoom(io, room).emit('voteResult', voteResultPayload);
+
+  // Give everyone a beat to see the reveal (Among Us style) before moving on.
+  room.timerHandle = setTimeout(() => {
+    if (caught) {
+      endRound(io, room, 'caught', accusedId);
+    } else if (!isLastQuadrant) {
+      advanceToQuadrant(io, room, round.quadrant + 1);
+    } else {
+      endRound(io, room, 'escaped', accusedId);
+    }
+  }, VOTE_REVEAL_PAUSE_MS);
 }
 
 function endRound(io, room, outcome, accusedId) {
@@ -251,6 +276,9 @@ export function roomSnapshot(room, playerId) {
       voteEndsAt: round.voteEndsAt,
       chat: round.chat,
     };
+    if (room.phase === 'voteResult' && round.lastVoteResult) {
+      snap.voteResult = round.lastVoteResult;
+    }
     if (playerId) {
       const isImposter = playerId === round.imposterId;
       snap.you = { isImposter, word: isImposter ? round.imposterWord : round.word };
