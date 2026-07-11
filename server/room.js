@@ -18,7 +18,7 @@ export class Room {
     this.hostId = hostId;
     this.players = new Map(); // id -> { id, name, colorKey, score, connected, socketId }
     this.settings = { ...DEFAULT_SETTINGS };
-    this.phase = 'lobby'; // lobby | draw | discuss | vote | results
+    this.phase = 'lobby'; // lobby | draw | discuss | vote | voteResult | results
     this.roundNumber = 0;
     this.round = null;
     this.timerHandle = null;
