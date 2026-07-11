@@ -7,6 +7,7 @@ import Lobby from './pages/Lobby.jsx';
 import RoleReveal from './pages/RoleReveal.jsx';
 import Draw from './pages/Draw.jsx';
 import QuadrantPhase from './pages/QuadrantPhase.jsx';
+import VoteResult from './pages/VoteResult.jsx';
 import Results from './pages/Results.jsx';
 
 export default function App() {
@@ -33,6 +34,7 @@ export default function App() {
   const [readyInfo, setReadyInfo] = useState({ readyCount: 0, total: 0, readyIds: [] });
   const [voteEndsAt, setVoteEndsAt] = useState(null);
   const [voteInfo, setVoteInfo] = useState({ votedCount: 0, total: 0 });
+  const [voteResultInfo, setVoteResultInfo] = useState(null);
   const [chat, setChat] = useState([]);
   const [results, setResults] = useState(null);
 
@@ -60,6 +62,7 @@ export default function App() {
       setResults(null);
       setReadyInfo({ readyCount: 0, total: playersRef.current.length, readyIds: [] });
       setVoteInfo({ votedCount: 0, total: playersRef.current.length });
+      setVoteResultInfo(null);
       setShowReveal(true);
     };
 
@@ -77,9 +80,15 @@ export default function App() {
       setPhase('vote');
       setVoteEndsAt(payload.voteEndsAt);
       setVoteInfo({ votedCount: 0, total: playersRef.current.length });
+      setVoteResultInfo(null);
     };
 
     const onVoteUpdate = (payload) => setVoteInfo(payload);
+
+    const onVoteResult = (payload) => {
+      setPhase('voteResult');
+      setVoteResultInfo(payload);
+    };
 
     const onChatMessage = (msg) => setChat((c) => [...c, msg]);
 
@@ -99,6 +108,7 @@ export default function App() {
     socket.on('readyUpdate', onReadyUpdate);
     socket.on('voteStart', onVoteStart);
     socket.on('voteUpdate', onVoteUpdate);
+    socket.on('voteResult', onVoteResult);
     socket.on('chatMessage', onChatMessage);
     socket.on('results', onResults);
     socket.on('error', onServerError);
@@ -113,6 +123,7 @@ export default function App() {
       socket.off('readyUpdate', onReadyUpdate);
       socket.off('voteStart', onVoteStart);
       socket.off('voteUpdate', onVoteUpdate);
+      socket.off('voteResult', onVoteResult);
       socket.off('chatMessage', onChatMessage);
       socket.off('results', onResults);
       socket.off('error', onServerError);
@@ -126,6 +137,7 @@ export default function App() {
     setSettings(res.settings);
     setPhase(res.phase);
     setRoundNumber(res.roundNumber || 0);
+    if (res.voteResult) setVoteResultInfo(res.voteResult);
     const myPlayer = res.players.find((p) => p.id === res.playerId);
     setMe({ id: res.playerId, name: myPlayer?.name, colorKey: myPlayer?.colorKey });
     setScreen('room');
@@ -247,6 +259,8 @@ export default function App() {
           me={me}
         />
       )}
+
+      {phase === 'voteResult' && <VoteResult result={voteResultInfo} />}
 
       {phase === 'results' && <Results results={results} isHost={me?.id === hostId} onNextRound={nextRound} />}
     </>
