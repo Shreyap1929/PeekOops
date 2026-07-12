@@ -21,10 +21,13 @@ export default function QuadrantPhase({
   voteInfo,
   onSubmitVote,
   me,
+  initialReady = false,
+  initialVote = null,
+  resyncToken,
 }) {
   const [chatText, setChatText] = useState('');
-  const [myReady, setMyReady] = useState(false);
-  const [myVote, setMyVote] = useState(null);
+  const [myReady, setMyReady] = useState(initialReady);
+  const [myVote, setMyVote] = useState(initialVote);
   const chatEndRef = useRef(null);
 
   useEffect(() => {
@@ -32,9 +35,14 @@ export default function QuadrantPhase({
     setMyVote(null);
   }, [quadrant]);
 
+  // A resync (rejoin) can land us back on the SAME quadrant/phase we were
+  // already in, so it needs its own trigger to restore what we'd already
+  // called or voted, distinct from the "new quadrant" reset above.
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ block: 'end' });
-  }, [chat]);
+    setMyReady(initialReady);
+    setMyVote(initialVote);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resyncToken]);
 
   const revealedQuadrants = Array.from({ length: quadrant }, (_, i) => i + 1);
 
