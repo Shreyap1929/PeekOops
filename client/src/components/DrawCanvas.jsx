@@ -3,19 +3,22 @@ import { setupHiDPICanvas, drawStrokesFull, drawQuadrantGuides } from '../canvas
 
 const EMIT_INTERVAL_MS = 70;
 
-export default function DrawCanvas({ color, strokeWidth = 5, disabled, onStrokeChunk, onClear }) {
+export default function DrawCanvas({ color, strokeWidth = 5, disabled, onStrokeChunk, onClear, initialStrokes }) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
   const ctxRef = useRef(null);
   const sizeRef = useRef({ w: 0, h: 0 });
 
-  const strokesRef = useRef([]); // full history, normalized points
+  const strokesRef = useRef(
+    initialStrokes && initialStrokes.length
+      ? initialStrokes.map((s) => ({ ...s, points: [...s.points] }))
+      : []
+  ); // full history, normalized points
   const activeStrokeRef = useRef(null);
   const pendingPointsRef = useRef([]); // points not yet flushed to server
   const flushTimerRef = useRef(null);
   const strokeCounterRef = useRef(0);
   const isFirstChunkRef = useRef(false);
-
   const redraw = () => {
     const ctx = ctxRef.current;
     const { w, h } = sizeRef.current;
@@ -23,7 +26,7 @@ export default function DrawCanvas({ color, strokeWidth = 5, disabled, onStrokeC
     drawStrokesFull(ctx, strokesRef.current, w, h);
     drawQuadrantGuides(ctx, w, h);
   };
-
+  
   useEffect(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
