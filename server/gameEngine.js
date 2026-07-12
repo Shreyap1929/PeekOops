@@ -30,6 +30,7 @@ export function startRound(io, room) {
     word: crewWord,
     imposterWord,
     imposterId: imposter.id,
+    playerIds: players.map((p) => p.id), // who actually played this round — used for fair scoring even if someone disconnects/reconnects later
     quadrant: 0,
     strokes: new Map(), // playerId -> [stroke]
     ready: new Set(),
@@ -204,20 +205,35 @@ function onVoteEnd(io, room) {
   }, VOTE_REVEAL_PAUSE_MS);
 }
 
+// Points are awarded by team, never per-vote: everyone on the winning team
+// gets the same number of points, and only one team wins per round.
+//   - Crew wins (imposter caught): every crewmate who played this round
+//     gets CREW_WIN_POINTS each, the imposter gets nothing.
+//   - Imposter wins (escapes all 4 quadrants without being caught): the
+//     imposter alone gets IMPOSTER_WIN_POINTS, crewmates get nothing.
+const CREW_WIN_POINTS = 1;
+const IMPOSTER_WIN_POINTS = 2;
+
 function endRound(io, room, outcome, accusedId) {
   const round = room.round;
   room.phase = 'results';
 
   const imposter = room.players.get(round.imposterId);
+  const roundPlayerIds = round.playerIds || [...room.players.keys()];
+
   if (outcome === 'caught') {
-    for (const p of room.players.values()) {
-      if (p.id !== round.imposterId) p.score += 1;
+    // Crew wins — every crewmate who played this round gets an equal share.
+    for (const id of roundPlayerIds) {
+      if (id === round.imposterId) continue;
+      const p = room.players.get(id);
+      if (p) p.score += CREW_WIN_POINTS;
     }
   } else {
-    if (imposter) imposter.score += 2;
+    // Imposter wins — got away clean.
+    if (imposter) imposter.score += IMPOSTER_WIN_POINTS;
   }
 
-  toRoom(io, room).emit('results', {
+  const payload = {
     outcome, // 'caught' | 'escaped'
     imposterId: round.imposterId,
     imposterName: imposter ? imposter.name : 'Unknown',
@@ -226,7 +242,10 @@ function endRound(io, room, outcome, accusedId) {
     imposterWord: round.imposterWord,
     quadrant: round.quadrant,
     players: room.publicPlayers(),
-  });
+  };
+  round.lastResults = payload; // kept for players who reconnect during the results screen
+
+  toRoom(io, room).emit('results', payload);
 }
 
 export function addStrokeChunk(room, playerId, chunk) {
@@ -268,6 +287,7 @@ export function roomSnapshot(room, playerId) {
   };
   if (room.round && room.phase !== 'lobby') {
     const round = room.round;
+    const total = room.connectedPlayers.length;
     snap.round = {
       quadrant: round.quadrant,
       strokesByPlayer: Object.fromEntries(round.strokes.entries()),
@@ -275,9 +295,16 @@ export function roomSnapshot(room, playerId) {
       discussEndsAt: round.discussEndsAt,
       voteEndsAt: round.voteEndsAt,
       chat: round.chat,
+      readyInfo: { readyCount: round.ready?.size || 0, total, readyIds: [...(round.ready || [])] },
+      voteInfo: { votedCount: round.votes?.size || 0, total },
+      myVote: playerId ? round.votes?.get(playerId) ?? null : null,
+      myReady: playerId ? round.ready?.has(playerId) || false : false,
     };
     if (room.phase === 'voteResult' && round.lastVoteResult) {
       snap.voteResult = round.lastVoteResult;
+    }
+    if (room.phase === 'results' && round.lastResults) {
+      snap.results = round.lastResults;
     }
     if (playerId) {
       const isImposter = playerId === round.imposterId;
