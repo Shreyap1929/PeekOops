@@ -31,7 +31,8 @@ const io = new Server(server, {
 
 /** @type {Map<string, Room>} */
 const rooms = new Map();
-/** socketId -> { roomCode, playerId } */
+/** socketId -> { roomCode, playerId } — playerId is a STABLE id owned by the
+ * client (persisted across reconnects), never the transient socket.id. */
 const socketIndex = new Map();
 
 function clampSettings(input = {}) {
@@ -44,12 +45,29 @@ function clampSettings(input = {}) {
   return out;
 }
 
+/** Turns a client-supplied clientId into a safe, stable player id string.
+ * Falls back to the socket id if the client didn't send one (older clients). */
+function resolveClientId(raw, fallback) {
+  const cleaned = String(raw || '').trim().slice(0, 64);
+  return cleaned || fallback;
+}
+
+/** Looks up the {room, player} for the socket making the request, based on
+ * the stable playerId recorded in socketIndex — NOT socket.id. */
+function currentPlayer(socket) {
+  const idx = socketIndex.get(socket.id);
+  if (!idx) return { room: null, player: null, playerId: null };
+  const room = rooms.get(idx.roomCode);
+  const player = room?.players.get(idx.playerId) || null;
+  return { room, player, playerId: idx.playerId };
+}
+
 io.on('connection', (socket) => {
-  socket.on('createRoom', ({ name }, cb) => {
+  socket.on('createRoom', ({ name, clientId }, cb) => {
     try {
       const cleanName = String(name || '').trim().slice(0, 20) || 'Player';
       const code = generateRoomCode(new Set(rooms.keys()));
-      const playerId = socket.id;
+      const playerId = resolveClientId(clientId, socket.id);
       const room = new Room(code, playerId);
       room.addPlayer(playerId, cleanName, socket.id);
       rooms.set(code, room);
@@ -63,25 +81,68 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('joinRoom', ({ roomCode, name }, cb) => {
+  socket.on('joinRoom', ({ roomCode, name, clientId }, cb) => {
     const code = String(roomCode || '').trim().toUpperCase();
     const room = rooms.get(code);
     if (!room) {
       cb?.({ ok: false, error: 'Room not found. Check the code and try again.' });
       return;
     }
+    const playerId = resolveClientId(clientId, socket.id);
+
+    // If this exact player (same persisted id) is already seated in the
+    // room — e.g. a page refresh mid-game — treat this as a resume instead
+    // of a brand-new join, regardless of the current phase.
+    const existing = room.players.get(playerId);
+    if (existing) {
+      existing.socketId = socket.id;
+      existing.connected = true;
+      socket.join(code);
+      socketIndex.set(socket.id, { roomCode: code, playerId });
+      cb?.({ ok: true, roomCode: code, playerId, ...roomSnapshot(room, playerId) });
+      broadcastPlayers(io, room);
+      return;
+    }
+
     if (room.phase !== 'lobby') {
       cb?.({ ok: false, error: 'This round has already started. Ask the host for the next one.' });
       return;
     }
     const cleanName = String(name || '').trim().slice(0, 20) || 'Player';
-    const playerId = socket.id;
     room.addPlayer(playerId, cleanName, socket.id);
 
     socket.join(code);
     socketIndex.set(socket.id, { roomCode: code, playerId });
 
     cb?.({ ok: true, roomCode: code, playerId, ...roomSnapshot(room, playerId) });
+    broadcastPlayers(io, room);
+  });
+
+  // Fired by the client whenever its socket re-establishes a connection
+  // (flaky wifi, brief server hiccup, tab coming back from sleep, etc.) and
+  // it already believes it's mid-game. Re-attaches the new socket to the
+  // existing player record and returns a full state snapshot so the client
+  // can resync instead of getting stuck on whatever screen it froze on.
+  socket.on('rejoinRoom', ({ roomCode, playerId }, cb) => {
+    const code = String(roomCode || '').trim().toUpperCase();
+    const room = rooms.get(code);
+    if (!room) {
+      cb?.({ ok: false, error: 'Room not found.' });
+      return;
+    }
+    const id = String(playerId || '');
+    const player = room.players.get(id);
+    if (!player) {
+      cb?.({ ok: false, error: 'Could not find your seat in this room.' });
+      return;
+    }
+
+    player.socketId = socket.id;
+    player.connected = true;
+    socket.join(code);
+    socketIndex.set(socket.id, { roomCode: code, playerId: id });
+
+    cb?.({ ok: true, roomCode: code, playerId: id, ...roomSnapshot(room, id) });
     broadcastPlayers(io, room);
   });
 
@@ -96,48 +157,50 @@ io.on('connection', (socket) => {
   });
 
   socket.on('updateSettings', ({ roomCode, settings }) => {
-    const room = rooms.get(String(roomCode || '').toUpperCase());
-    if (!room || room.hostId !== socket.id || room.phase !== 'lobby') return;
+    const { room, playerId } = currentPlayer(socket);
+    if (!room || room.code !== String(roomCode || '').toUpperCase()) return;
+    if (!playerId || room.hostId !== playerId || room.phase !== 'lobby') return;
     room.settings = { ...room.settings, ...clampSettings(settings) };
     broadcastSettings(io, room);
   });
 
   socket.on('startGame', ({ roomCode }) => {
-    const room = rooms.get(String(roomCode || '').toUpperCase());
-    if (!room || room.hostId !== socket.id || room.phase !== 'lobby') return;
+    const { room, playerId } = currentPlayer(socket);
+    if (!room || room.code !== String(roomCode || '').toUpperCase()) return;
+    if (!playerId || room.hostId !== playerId || room.phase !== 'lobby') return;
     if (room.connectedPlayers.length < 3) return;
     startRound(io, room);
   });
 
   socket.on('nextRound', ({ roomCode }) => {
-    const room = rooms.get(String(roomCode || '').toUpperCase());
-    if (!room || room.hostId !== socket.id || room.phase !== 'results') return;
+    const { room, playerId } = currentPlayer(socket);
+    if (!room || room.code !== String(roomCode || '').toUpperCase()) return;
+    if (!playerId || room.hostId !== playerId || room.phase !== 'results') return;
     if (room.connectedPlayers.length < 3) return;
     startRound(io, room);
   });
 
   socket.on('strokeChunk', ({ roomCode, ...chunk }) => {
-    const room = rooms.get(String(roomCode || '').toUpperCase());
-    if (!room) return;
-    addStrokeChunk(room, socket.id, chunk);
+    const { room, playerId } = currentPlayer(socket);
+    if (!room || room.code !== String(roomCode || '').toUpperCase() || !playerId) return;
+    addStrokeChunk(room, playerId, chunk);
   });
 
   socket.on('toggleReady', ({ roomCode, ready }) => {
-    const room = rooms.get(String(roomCode || '').toUpperCase());
-    if (!room) return;
-    toggleReady(io, room, socket.id, !!ready);
+    const { room, playerId } = currentPlayer(socket);
+    if (!room || room.code !== String(roomCode || '').toUpperCase() || !playerId) return;
+    toggleReady(io, room, playerId, !!ready);
   });
 
   socket.on('submitVote', ({ roomCode, votedId }) => {
-    const room = rooms.get(String(roomCode || '').toUpperCase());
-    if (!room) return;
-    submitVote(io, room, socket.id, votedId);
+    const { room, playerId } = currentPlayer(socket);
+    if (!room || room.code !== String(roomCode || '').toUpperCase() || !playerId) return;
+    submitVote(io, room, playerId, votedId);
   });
 
   socket.on('chatMessage', ({ roomCode, text }) => {
-    const room = rooms.get(String(roomCode || '').toUpperCase());
-    const player = room?.players.get(socket.id);
-    if (!room || !player) return;
+    const { room, player } = currentPlayer(socket);
+    if (!room || room.code !== String(roomCode || '').toUpperCase() || !player) return;
     addChatMessage(io, room, player, text);
   });
 
@@ -150,6 +213,10 @@ io.on('connection', (socket) => {
 
     const player = room.players.get(idx.playerId);
     if (!player) return;
+
+    // A newer socket for the same player may have already taken over
+    // (e.g. a rapid reconnect) — don't clobber that live connection.
+    if (player.socketId !== socket.id) return;
 
     if (room.phase === 'lobby') {
       room.players.delete(idx.playerId);
