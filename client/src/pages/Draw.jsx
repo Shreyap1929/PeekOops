@@ -3,7 +3,7 @@ import DrawCanvas from '../components/DrawCanvas.jsx';
 import Timer from '../components/Timer.jsx';
 import { accentBase } from '../data/colors.js';
 
-export default function Draw({ word, isImposter, drawEndsAt, drawTime, myColorKey, roundNumber, onStrokeChunk }) {
+export default function Draw({ word, isImposter, drawEndsAt, drawTime, myColorKey, roundNumber, onStrokeChunk, initialStrokes }) {
   const clearRef = useRef(null);
   const color = accentBase(myColorKey);
 
@@ -27,7 +27,7 @@ export default function Draw({ word, isImposter, drawEndsAt, drawTime, myColorKe
         <Timer endsAt={drawEndsAt} totalSeconds={drawTime} label="Time to draw" accent="coral" />
 
         <div style={{ flex: 1, minHeight: 320 }}>
-          <DrawCanvas color={color} strokeWidth={5} onStrokeChunk={onStrokeChunk} onClear={clearRef} />
+          <DrawCanvas color={color} strokeWidth={5} onStrokeChunk={onStrokeChunk} onClear={clearRef} initialStrokes={initialStrokes} />
         </div>
         <p style={{ textAlign: 'center', color: 'var(--ink-soft)', fontWeight: 700, fontSize: '0.85rem' }}>
           Only you can see this canvas until the reveal.
