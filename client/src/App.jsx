@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { socket } from './socket.js';
 import { DEFAULT_SETTINGS } from './data/settingsMeta.js';
+import { getClientId, saveSession, loadSession, clearSession } from './session.js';
 
 import Landing from './pages/Landing.jsx';
 import Lobby from './pages/Lobby.jsx';
@@ -10,11 +11,20 @@ import QuadrantPhase from './pages/QuadrantPhase.jsx';
 import VoteResult from './pages/VoteResult.jsx';
 import Results from './pages/Results.jsx';
 
+const clientId = getClientId();
+
+// How long the socket has to be down before we bother the player with the
+// "Reconnecting…" banner. Socket.io retries very fast on brief network
+// blips, so without this the banner used to flash on and off repeatedly —
+// which is what looked like "the same glitch happening two or three times".
+const DISCONNECT_BANNER_DELAY_MS = 600;
+
 export default function App() {
   const [screen, setScreen] = useState('landing'); // 'landing' | 'room'
-  const [connected, setConnected] = useState(socket.connected);
+  const [showBanner, setShowBanner] = useState(false);
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [resyncing, setResyncing] = useState(false);
 
   const [roomCode, setRoomCode] = useState('');
   const [me, setMe] = useState(null);
@@ -27,6 +37,7 @@ export default function App() {
   const [showReveal, setShowReveal] = useState(false);
   const [roundYou, setRoundYou] = useState({ isImposter: false, word: '' });
   const [drawEndsAt, setDrawEndsAt] = useState(null);
+  const [initialStrokes, setInitialStrokes] = useState([]);
 
   const [quadrant, setQuadrant] = useState(0);
   const [strokesByPlayer, setStrokesByPlayer] = useState({});
@@ -38,12 +49,92 @@ export default function App() {
   const [chat, setChat] = useState([]);
   const [results, setResults] = useState(null);
 
+  // Seeded from a resync so QuadrantPhase can restore "you already called a
+  // vote" / "you already voted for X" instead of quietly forgetting it.
+  const [myReadySeed, setMyReadySeed] = useState(false);
+  const [myVoteSeed, setMyVoteSeed] = useState(null);
+  const [resyncToken, setResyncToken] = useState(0);
+
   const playersRef = useRef(players);
   playersRef.current = players;
+  const roomCodeRef = useRef(roomCode);
+  roomCodeRef.current = roomCode;
+  const meRef = useRef(me);
+  meRef.current = me;
+  const screenRef = useRef(screen);
+  screenRef.current = screen;
+
+  const applySnapshot = useCallback((res, { isRejoin }) => {
+    setRoomCode(res.roomCode);
+    setPlayers(res.players);
+    setHostId(res.hostId);
+    setSettings(res.settings);
+    setPhase(res.phase);
+    setRoundNumber(res.roundNumber || 0);
+
+    const myPlayer = res.players.find((p) => p.id === res.playerId);
+    setMe({ id: res.playerId, name: myPlayer?.name, colorKey: myPlayer?.colorKey });
+
+    if (isRejoin) {
+      // We're resuming mid-game — never replay the role-reveal overlay, and
+      // fill in everything the normal event stream would have built up.
+      setShowReveal(false);
+      if (res.you) setRoundYou(res.you);
+      if (res.round) {
+        setDrawEndsAt(res.round.drawEndsAt || null);
+        setInitialStrokes(res.round.strokesByPlayer?.[res.playerId] || []);
+        setQuadrant(res.round.quadrant || 0);
+        setStrokesByPlayer(res.round.strokesByPlayer || {});
+        setDiscussEndsAt(res.round.discussEndsAt || null);
+        setVoteEndsAt(res.round.voteEndsAt || null);
+        setChat(res.round.chat || []);
+        setReadyInfo(res.round.readyInfo || { readyCount: 0, total: res.players.length, readyIds: [] });
+        setVoteInfo(res.round.voteInfo || { votedCount: 0, total: res.players.length });
+        setMyReadySeed(!!res.round.myReady);
+        setMyVoteSeed(res.round.myVote ?? null);
+        setResyncToken((t) => t + 1);
+      }
+      if (res.voteResult) setVoteResultInfo(res.voteResult);
+      if (res.results) setResults(res.results);
+    }
+
+    saveSession(res.roomCode, res.playerId);
+    setScreen('room');
+  }, []);
+
+  // Attempts to resume a previous session (either after a raw socket
+  // reconnect, or after a full page reload if sessionStorage still has one).
+  const attemptRejoin = useCallback(() => {
+    const stored = loadSession();
+    if (!stored) return;
+    socket.emit('rejoinRoom', { roomCode: stored.roomCode, playerId: stored.playerId }, (res) => {
+      setResyncing(false);
+      if (!res?.ok) {
+        // Room's gone or we're not in it (e.g. server restarted) — don't
+        // keep retrying against a session that will never work again.
+        clearSession();
+        return;
+      }
+      applySnapshot(res, { isRejoin: true });
+    });
+  }, [applySnapshot]);
 
   useEffect(() => {
-    const onConnect = () => setConnected(true);
-    const onDisconnect = () => setConnected(false);
+    let bannerTimer = null;
+
+    const onConnect = () => {
+      if (bannerTimer) clearTimeout(bannerTimer);
+      setShowBanner(false);
+      // Only relevant if we'd already joined a room before this connect
+      // (i.e. this is a reconnect, not the very first page load).
+      if (screenRef.current === 'room' && roomCodeRef.current && meRef.current?.id) {
+        setResyncing(true);
+        attemptRejoin();
+      }
+    };
+    const onDisconnect = () => {
+      bannerTimer = setTimeout(() => setShowBanner(true), DISCONNECT_BANNER_DELAY_MS);
+    };
 
     const onPlayersUpdate = ({ players: p, hostId: h }) => {
       setPlayers(p);
@@ -56,6 +147,7 @@ export default function App() {
       setRoundNumber(payload.roundNumber);
       setRoundYou({ isImposter: payload.isImposter, word: payload.word });
       setDrawEndsAt(payload.drawEndsAt);
+      setInitialStrokes([]);
       setQuadrant(0);
       setStrokesByPlayer({});
       setChat([]);
@@ -63,6 +155,9 @@ export default function App() {
       setReadyInfo({ readyCount: 0, total: playersRef.current.length, readyIds: [] });
       setVoteInfo({ votedCount: 0, total: playersRef.current.length });
       setVoteResultInfo(null);
+      setMyReadySeed(false);
+      setMyVoteSeed(null);
+      setResyncToken((t) => t + 1);
       setShowReveal(true);
     };
 
@@ -72,6 +167,9 @@ export default function App() {
       setStrokesByPlayer(payload.strokesByPlayer);
       setDiscussEndsAt(payload.discussEndsAt);
       setReadyInfo({ readyCount: 0, total: playersRef.current.length, readyIds: [] });
+      setMyReadySeed(false);
+      setMyVoteSeed(null);
+      setResyncToken((t) => t + 1);
     };
 
     const onReadyUpdate = (payload) => setReadyInfo(payload);
@@ -81,6 +179,8 @@ export default function App() {
       setVoteEndsAt(payload.voteEndsAt);
       setVoteInfo({ votedCount: 0, total: playersRef.current.length });
       setVoteResultInfo(null);
+      setMyVoteSeed(null);
+      setResyncToken((t) => t + 1);
     };
 
     const onVoteUpdate = (payload) => setVoteInfo(payload);
@@ -114,6 +214,7 @@ export default function App() {
     socket.on('error', onServerError);
 
     return () => {
+      if (bannerTimer) clearTimeout(bannerTimer);
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
       socket.off('playersUpdate', onPlayersUpdate);
@@ -128,44 +229,38 @@ export default function App() {
       socket.off('results', onResults);
       socket.off('error', onServerError);
     };
-  }, []);
+  }, [attemptRejoin]);
 
-  const applyJoinSnapshot = useCallback((res) => {
-    setRoomCode(res.roomCode);
-    setPlayers(res.players);
-    setHostId(res.hostId);
-    setSettings(res.settings);
-    setPhase(res.phase);
-    setRoundNumber(res.roundNumber || 0);
-    if (res.voteResult) setVoteResultInfo(res.voteResult);
-    const myPlayer = res.players.find((p) => p.id === res.playerId);
-    setMe({ id: res.playerId, name: myPlayer?.name, colorKey: myPlayer?.colorKey });
-    setScreen('room');
+  // On first mount, if the tab still has a session from before a page
+  // reload, try to silently resume it instead of dropping back to Landing.
+  useEffect(() => {
+    if (socket.connected) attemptRejoin();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const createRoom = (name) => {
     setBusy(true);
     setErrorMsg('');
-    socket.emit('createRoom', { name }, (res) => {
+    socket.emit('createRoom', { name, clientId }, (res) => {
       setBusy(false);
       if (!res?.ok) {
         setErrorMsg(res?.error || 'Could not create a room. Try again.');
         return;
       }
-      applyJoinSnapshot(res);
+      applySnapshot(res, { isRejoin: false });
     });
   };
 
   const joinRoom = (name, code) => {
     setBusy(true);
     setErrorMsg('');
-    socket.emit('joinRoom', { name, roomCode: code }, (res) => {
+    socket.emit('joinRoom', { name, roomCode: code, clientId }, (res) => {
       setBusy(false);
       if (!res?.ok) {
         setErrorMsg(res?.error || 'Could not join that room.');
         return;
       }
-      applyJoinSnapshot(res);
+      applySnapshot(res, { isRejoin: false });
     });
   };
 
@@ -187,7 +282,7 @@ export default function App() {
 
   return (
     <>
-      {!connected && (
+      {(showBanner || resyncing) && (
         <div
           style={{
             position: 'fixed',
@@ -236,6 +331,7 @@ export default function App() {
           drawTime={settings.drawTime}
           myColorKey={me?.colorKey}
           roundNumber={roundNumber}
+          initialStrokes={initialStrokes}
           onStrokeChunk={sendStrokeChunk}
         />
       )}
@@ -257,6 +353,9 @@ export default function App() {
           voteInfo={voteInfo}
           onSubmitVote={submitVote}
           me={me}
+          initialReady={myReadySeed}
+          initialVote={myVoteSeed}
+          resyncToken={resyncToken}
         />
       )}
 
