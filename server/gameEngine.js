@@ -35,7 +35,6 @@ export function startRound(io, room) {
     strokes: new Map(), // playerId -> [stroke]
     ready: new Set(),
     votes: new Map(), // voterId -> votedId
-    chat: [],
     drawEndsAt: Date.now() + room.settings.drawTime * 1000,
   };
   room.phase = 'draw';
@@ -297,15 +296,6 @@ export function addStrokeChunk(room, playerId, chunk) {
   }
 }
 
-export function addChatMessage(io, room, player, text) {
-  if (!room.round) return;
-  const trimmed = String(text || '').slice(0, 280).trim();
-  if (!trimmed) return;
-  const msg = { playerId: player.id, name: player.name, colorKey: player.colorKey, text: trimmed, ts: Date.now() };
-  room.round.chat.push(msg);
-  toRoom(io, room).emit('chatMessage', msg);
-}
-
 export function roomSnapshot(room, playerId) {
   const snap = {
     code: room.code,
@@ -324,7 +314,6 @@ export function roomSnapshot(room, playerId) {
       drawEndsAt: round.drawEndsAt,
       discussEndsAt: round.discussEndsAt,
       voteEndsAt: round.voteEndsAt,
-      chat: round.chat,
       readyInfo: { readyCount: round.ready?.size || 0, total, readyIds: [...(round.ready || [])] },
       voteInfo: { votedCount: round.votes?.size || 0, total },
       myVote: playerId ? round.votes?.get(playerId) ?? null : null,
