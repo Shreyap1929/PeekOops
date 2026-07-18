@@ -10,6 +10,7 @@ import {
   toggleReady,
   submitVote,
   addStrokeChunk,
+  markDoneDrawing,
   broadcastPlayers,
   broadcastSettings,
   roomSnapshot,
@@ -183,6 +184,12 @@ io.on('connection', (socket) => {
     const { room, playerId } = currentPlayer(socket);
     if (!room || room.code !== String(roomCode || '').toUpperCase() || !playerId) return;
     addStrokeChunk(room, playerId, chunk);
+  });
+
+  socket.on('markDoneDrawing', ({ roomCode }) => {
+    const { room, playerId } = currentPlayer(socket);
+    if (!room || room.code !== String(roomCode || '').toUpperCase() || !playerId) return;
+    markDoneDrawing(io, room, playerId);
   });
 
   socket.on('toggleReady', ({ roomCode, ready }) => {
