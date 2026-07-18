@@ -133,6 +133,11 @@ function startVote(io, room) {
 
 export function submitVote(io, room, voterId, votedId) {
   if (room.phase !== 'vote' || !room.round) return;
+  // Never trust the client alone: reject self-votes and votes for a target
+  // that isn't an actual player in the room, even though the UI already
+  // prevents both.
+  if (!votedId || votedId === voterId || !room.players.has(votedId)) return;
+
   room.round.votes.set(voterId, votedId);
   const total = room.connectedPlayers.length;
   toRoom(io, room).emit('voteUpdate', {
@@ -147,25 +152,38 @@ export function submitVote(io, room, voterId, votedId) {
   }
 }
 
+// Returns the accused player's id only if they won a genuine majority —
+// strictly more than half of all votes cast — otherwise null.
+//
+// Using one strict-majority check (instead of the old "highest count wins
+// unless the top two are exactly tied") correctly folds BOTH failure modes
+// the game cares about into the same "no majority" result:
+//   - an exact tie for the top spot (e.g. 2-2 of 4) can never clear 50%
+//   - a 3+-way split where the leader only has a plurality (e.g. 2 of 5,
+//     which is 40%) also can't clear 50%, even though nothing was
+//     technically tied for first place
+// So a single `topCount * 2 > totalCast` check is both necessary and
+// sufficient — no separate tie-detection is needed.
 function tallyVotes(round) {
   const counts = new Map();
+  let totalCast = 0;
   for (const votedId of round.votes.values()) {
     counts.set(votedId, (counts.get(votedId) || 0) + 1);
+    totalCast += 1;
   }
+  if (totalCast === 0) return null; // nobody voted — no majority is possible
+
   let topId = null;
-  let topCount = -1;
-  let tie = false;
+  let topCount = 0;
   for (const [id, count] of counts.entries()) {
     if (count > topCount) {
       topCount = count;
       topId = id;
-      tie = false;
-    } else if (count === topCount) {
-      tie = true;
     }
   }
-  if (tie || topId === null) return null;
-  return topId;
+
+  const hasMajority = topCount * 2 > totalCast;
+  return hasMajority ? topId : null;
 }
 
 const VOTE_REVEAL_PAUSE_MS = 3500;
@@ -175,17 +193,25 @@ function onVoteEnd(io, room) {
   const round = room.round;
   const accusedId = tallyVotes(round);
   const accused = accusedId ? room.players.get(accusedId) : null;
-  const caught = accusedId !== null && accusedId === round.imposterId;
   const isLastQuadrant = round.quadrant >= 4;
+
+  // Always exactly one of these three — the vote never resolves to
+  // anything else, so the client never has a case to silently skip.
+  //   'caught'     — Case 1: the imposter won a majority
+  //   'wrong'      — Case 2: a crewmate won a majority
+  //   'noMajority' — Case 3: a tie, or nobody cleared 50%
+  let outcome;
+  if (accusedId === null) outcome = 'noMajority';
+  else if (accusedId === round.imposterId) outcome = 'caught';
+  else outcome = 'wrong';
 
   room.phase = 'voteResult';
 
   const voteResultPayload = {
-    accusedId: accusedId || null,
+    outcome,
+    accusedId,
     accusedName: accused ? accused.name : null,
     accusedColorKey: accused ? accused.colorKey : null,
-    wasImposter: caught,
-    noMajority: accusedId === null,
     quadrant: round.quadrant,
     isLastQuadrant,
   };
@@ -195,11 +221,15 @@ function onVoteEnd(io, room) {
 
   // Give everyone a beat to see the reveal (Among Us style) before moving on.
   room.timerHandle = setTimeout(() => {
-    if (caught) {
+    if (outcome === 'caught') {
       endRound(io, room, 'caught', accusedId);
     } else if (!isLastQuadrant) {
+      // Wrong guess or no majority, but there's still another quadrant to
+      // reveal — the round continues instead of ending here. No player is
+      // removed from the room or the round in any of these cases.
       advanceToQuadrant(io, room, round.quadrant + 1);
     } else {
+      // Final quadrant with no correct accusation — the imposter gets away.
       endRound(io, room, 'escaped', accusedId);
     }
   }, VOTE_REVEAL_PAUSE_MS);
