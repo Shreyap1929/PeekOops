@@ -10,7 +10,6 @@ import {
   toggleReady,
   submitVote,
   addStrokeChunk,
-  addChatMessage,
   broadcastPlayers,
   broadcastSettings,
   roomSnapshot,
@@ -196,12 +195,6 @@ io.on('connection', (socket) => {
     const { room, playerId } = currentPlayer(socket);
     if (!room || room.code !== String(roomCode || '').toUpperCase() || !playerId) return;
     submitVote(io, room, playerId, votedId);
-  });
-
-  socket.on('chatMessage', ({ roomCode, text }) => {
-    const { room, player } = currentPlayer(socket);
-    if (!room || room.code !== String(roomCode || '').toUpperCase() || !player) return;
-    addChatMessage(io, room, player, text);
   });
 
   socket.on('disconnect', () => {
