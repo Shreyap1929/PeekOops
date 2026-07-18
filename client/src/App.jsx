@@ -46,7 +46,6 @@ export default function App() {
   const [voteEndsAt, setVoteEndsAt] = useState(null);
   const [voteInfo, setVoteInfo] = useState({ votedCount: 0, total: 0 });
   const [voteResultInfo, setVoteResultInfo] = useState(null);
-  const [chat, setChat] = useState([]);
   const [results, setResults] = useState(null);
 
   // Seeded from a resync so QuadrantPhase can restore "you already called a
@@ -87,7 +86,6 @@ export default function App() {
         setStrokesByPlayer(res.round.strokesByPlayer || {});
         setDiscussEndsAt(res.round.discussEndsAt || null);
         setVoteEndsAt(res.round.voteEndsAt || null);
-        setChat(res.round.chat || []);
         setReadyInfo(res.round.readyInfo || { readyCount: 0, total: res.players.length, readyIds: [] });
         setVoteInfo(res.round.voteInfo || { votedCount: 0, total: res.players.length });
         setMyReadySeed(!!res.round.myReady);
@@ -150,7 +148,6 @@ export default function App() {
       setInitialStrokes([]);
       setQuadrant(0);
       setStrokesByPlayer({});
-      setChat([]);
       setResults(null);
       setReadyInfo({ readyCount: 0, total: playersRef.current.length, readyIds: [] });
       setVoteInfo({ votedCount: 0, total: playersRef.current.length });
@@ -190,8 +187,6 @@ export default function App() {
       setVoteResultInfo(payload);
     };
 
-    const onChatMessage = (msg) => setChat((c) => [...c, msg]);
-
     const onResults = (payload) => {
       setPhase('results');
       setResults(payload);
@@ -209,7 +204,6 @@ export default function App() {
     socket.on('voteStart', onVoteStart);
     socket.on('voteUpdate', onVoteUpdate);
     socket.on('voteResult', onVoteResult);
-    socket.on('chatMessage', onChatMessage);
     socket.on('results', onResults);
     socket.on('error', onServerError);
 
@@ -225,7 +219,6 @@ export default function App() {
       socket.off('voteStart', onVoteStart);
       socket.off('voteUpdate', onVoteUpdate);
       socket.off('voteResult', onVoteResult);
-      socket.off('chatMessage', onChatMessage);
       socket.off('results', onResults);
       socket.off('error', onServerError);
     };
@@ -274,7 +267,6 @@ export default function App() {
   const sendStrokeChunk = (chunk) => socket.emit('strokeChunk', { roomCode, ...chunk });
   const toggleReady = (ready) => socket.emit('toggleReady', { roomCode, ready });
   const submitVote = (votedId) => socket.emit('submitVote', { roomCode, votedId });
-  const sendChat = (text) => socket.emit('chatMessage', { roomCode, text });
 
   if (screen === 'landing') {
     return <Landing onCreateRoom={createRoom} onJoinRoom={joinRoom} errorMsg={errorMsg} busy={busy} />;
@@ -348,8 +340,6 @@ export default function App() {
           voteTime={settings.voteTime}
           readyInfo={readyInfo}
           onToggleReady={toggleReady}
-          chat={chat}
-          onSendChat={sendChat}
           voteInfo={voteInfo}
           onSubmitVote={submitVote}
           me={me}
