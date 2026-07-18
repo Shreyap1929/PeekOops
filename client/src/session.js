@@ -1,12 +1,20 @@
-// A stable identity for THIS browser tab, independent of socket.id (which
+// A stable identity for THIS browser, independent of socket.id (which
 // changes every time the socket reconnects). This is what lets a player
 // keep their seat — their role, score, and place in the round — across a
 // dropped connection instead of silently becoming a new, disconnected
 // "ghost" player.
 //
-// sessionStorage (not localStorage) is used deliberately: it's scoped per
-// tab, so opening several tabs to test multiple players locally still gives
-// each tab its own identity.
+// localStorage is used deliberately: it survives not just a socket
+// reconnect but a full page reload, tab close, or the tab being killed and
+// reopened (e.g. mobile backgrounding, laptop sleep, Render's free-tier
+// server spinning down and back up) — all of which would wipe
+// sessionStorage and hand the player a brand-new identity right when
+// reconnection support matters most.
+//
+// Trade-off: because it's per-browser rather than per-tab, opening several
+// tabs in the *same* browser to test multiple players locally will now have
+// them share one identity. Use separate browsers/profiles (or an incognito
+// window) for that kind of local multi-player testing.
 
 const CLIENT_ID_KEY = 'peekoops:clientId';
 const SESSION_KEY = 'peekoops:session';
@@ -18,14 +26,14 @@ function makeId() {
 
 export function getClientId() {
   try {
-    let id = sessionStorage.getItem(CLIENT_ID_KEY);
+    let id = localStorage.getItem(CLIENT_ID_KEY);
     if (!id) {
       id = makeId();
-      sessionStorage.setItem(CLIENT_ID_KEY, id);
+      localStorage.setItem(CLIENT_ID_KEY, id);
     }
     return id;
   } catch {
-    // sessionStorage unavailable (e.g. private mode edge cases) — fall back
+    // localStorage unavailable (e.g. private mode edge cases) — fall back
     // to an in-memory id for this page's lifetime.
     return makeId();
   }
@@ -33,7 +41,7 @@ export function getClientId() {
 
 export function saveSession(roomCode, playerId) {
   try {
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify({ roomCode, playerId }));
+    localStorage.setItem(SESSION_KEY, JSON.stringify({ roomCode, playerId }));
   } catch {
     /* ignore */
   }
@@ -41,7 +49,7 @@ export function saveSession(roomCode, playerId) {
 
 export function loadSession() {
   try {
-    const raw = sessionStorage.getItem(SESSION_KEY);
+    const raw = localStorage.getItem(SESSION_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed?.roomCode || !parsed?.playerId) return null;
@@ -53,7 +61,7 @@ export function loadSession() {
 
 export function clearSession() {
   try {
-    sessionStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(SESSION_KEY);
   } catch {
     /* ignore */
   }
