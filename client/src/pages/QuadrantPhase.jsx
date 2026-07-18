@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import RevealCanvas from '../components/RevealCanvas.jsx';
 import PlayerTag from '../components/PlayerTag.jsx';
 import Timer from '../components/Timer.jsx';
@@ -16,8 +16,6 @@ export default function QuadrantPhase({
   voteTime,
   readyInfo,
   onToggleReady,
-  chat,
-  onSendChat,
   voteInfo,
   onSubmitVote,
   me,
@@ -25,10 +23,8 @@ export default function QuadrantPhase({
   initialVote = null,
   resyncToken,
 }) {
-  const [chatText, setChatText] = useState('');
   const [myReady, setMyReady] = useState(initialReady);
   const [myVote, setMyVote] = useState(initialVote);
-  const chatEndRef = useRef(null);
 
   useEffect(() => {
     setMyReady(false);
@@ -55,13 +51,6 @@ export default function QuadrantPhase({
   const castVote = (playerId) => {
     setMyVote(playerId);
     onSubmitVote(playerId);
-  };
-
-  const sendChat = () => {
-    const t = chatText.trim();
-    if (!t) return;
-    onSendChat(t);
-    setChatText('');
   };
 
   return (
@@ -140,35 +129,27 @@ export default function QuadrantPhase({
               </div>
             )}
 
-            <div className="card" style={{ display: 'flex', flexDirection: 'column', height: 320 }}>
-              <h4 style={{ marginBottom: 'var(--space-3)' }}>Chat</h4>
-              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', paddingRight: 4 }}>
-                {chat.length === 0 && (
-                  <p style={{ color: 'var(--ink-soft)', fontSize: '0.85rem' }}>No messages yet — say something!</p>
-                )}
-                {chat.map((m, i) => (
-                  <div key={i} style={{ fontSize: '0.9rem' }}>
-                    <PlayerTag name={m.name} colorKey={m.colorKey} size="sm" />
-                    <span style={{ marginLeft: 6 }}>{m.text}</span>
-                  </div>
-                ))}
-                <div ref={chatEndRef} />
+            {phase === 'discuss' && (
+              <div className="card">
+                <h4 style={{ marginBottom: 'var(--space-3)' }}>Connected players</h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                  {players.map((p) => (
+                    <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <PlayerTag name={p.name} colorKey={p.colorKey} size="sm" muted={!p.connected} />
+                      <span
+                        style={{
+                          fontSize: '0.75rem',
+                          fontWeight: 800,
+                          color: p.connected ? 'var(--sage-shade)' : 'var(--ink-soft)',
+                        }}
+                      >
+                        {p.connected ? 'Connected' : 'Reconnecting…'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
-                <input
-                  className="input"
-                  style={{ padding: '10px 14px', fontSize: '0.95rem' }}
-                  placeholder="Type a message…"
-                  value={chatText}
-                  maxLength={280}
-                  onChange={(e) => setChatText(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && sendChat()}
-                />
-                <button className="btn btn-primary" style={{ padding: '10px 16px' }} onClick={sendChat}>
-                  Send
-                </button>
-              </div>
-            </div>
+            )}
           </div>
         </div>
       </div>
