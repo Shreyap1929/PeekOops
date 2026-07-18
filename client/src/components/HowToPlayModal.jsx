@@ -24,9 +24,10 @@ export default function HowToPlayModal({ onClose }) {
         </Section>
 
         <Section emoji="💬" title="Discuss & call a vote">
-          After each reveal, chat about who looks off. Confident? Tap
-          <strong> Call a Vote</strong> — if everyone calls it, voting starts
-          immediately. Otherwise the next quadrant reveals when time runs out.
+          After each reveal, talk it over out loud — who looks off? Confident?
+          Tap <strong>Call a Vote</strong> — if everyone calls it, voting
+          starts immediately. Otherwise the next quadrant reveals when time
+          runs out.
         </Section>
 
         <Section emoji="🗳️" title="Vote">
