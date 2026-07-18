@@ -33,6 +33,7 @@ export function startRound(io, room) {
     playerIds: players.map((p) => p.id), // who actually played this round — used for fair scoring even if someone disconnects/reconnects later
     quadrant: 0,
     strokes: new Map(), // playerId -> [stroke]
+    doneDrawing: new Set(), // playerIds who've clicked "Done Drawing" — one-way, never removed
     ready: new Set(),
     votes: new Map(), // voterId -> votedId
     drawEndsAt: Date.now() + room.settings.drawTime * 1000,
@@ -296,6 +297,24 @@ export function addStrokeChunk(room, playerId, chunk) {
   }
 }
 
+// Marks a player as finished drawing. One-way: once set, a player can never
+// be un-marked, and clicking again is a harmless no-op (guards against
+// double-clicks or a client retrying the emit). This intentionally does
+// NOT check whether everyone is done or advance the round in any way —
+// auto-advancing on full completion is a separate feature, handled later.
+export function markDoneDrawing(io, room, playerId) {
+  if (room.phase !== 'draw' || !room.round) return;
+  const round = room.round;
+  if (!round.strokes.has(playerId)) return; // not a player in this round
+  if (round.doneDrawing.has(playerId)) return; // already marked — ignore repeat clicks
+
+  round.doneDrawing.add(playerId);
+  toRoom(io, room).emit('doneDrawingUpdate', {
+    doneIds: [...round.doneDrawing],
+    total: room.connectedPlayers.length,
+  });
+}
+
 export function roomSnapshot(room, playerId) {
   const snap = {
     code: room.code,
@@ -316,8 +335,10 @@ export function roomSnapshot(room, playerId) {
       voteEndsAt: round.voteEndsAt,
       readyInfo: { readyCount: round.ready?.size || 0, total, readyIds: [...(round.ready || [])] },
       voteInfo: { votedCount: round.votes?.size || 0, total },
+      doneDrawingInfo: { doneIds: [...(round.doneDrawing || [])], total },
       myVote: playerId ? round.votes?.get(playerId) ?? null : null,
       myReady: playerId ? round.ready?.has(playerId) || false : false,
+      myDoneDrawing: playerId ? round.doneDrawing?.has(playerId) || false : false,
     };
     if (room.phase === 'voteResult' && round.lastVoteResult) {
       snap.voteResult = round.lastVoteResult;
