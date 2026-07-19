@@ -41,6 +41,7 @@ export default function QuadrantPhase({
   }, [resyncToken]);
 
   const revealedQuadrants = Array.from({ length: quadrant }, (_, i) => i + 1);
+  const isVote = phase === 'vote';
 
   const toggleReady = () => {
     const next = !myReady;
@@ -58,16 +59,16 @@ export default function QuadrantPhase({
       <div className="wide" style={{ paddingTop: 'var(--space-5)', paddingBottom: 'var(--space-6)', flex: 1 }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-4)' }}>
           <div>
-            <p style={{ fontWeight: 800, color: 'var(--ink-soft)', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            <p style={{ fontWeight: 800, color: isVote ? 'var(--pink)' : 'var(--cyan-soft)', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
               Quadrant {quadrant} of 4 · {QUADRANT_LABELS[quadrant]}
             </p>
-            <h2 style={{ fontSize: '1.6rem' }}>{phase === 'vote' ? 'Vote: who is the imposter?' : 'Discuss'}</h2>
+            <h2 style={{ fontSize: '1.6rem' }}>{isVote ? '🗳️ Vote: who is the imposter?' : 'Discuss'}</h2>
           </div>
           <div style={{ minWidth: 220 }}>
             {phase === 'discuss' ? (
-              <Timer endsAt={discussEndsAt} totalSeconds={discussTime} label="Discuss time" accent="sky" />
+              <Timer endsAt={discussEndsAt} totalSeconds={discussTime} label="Discuss time" accent="cyan" />
             ) : (
-              <Timer endsAt={voteEndsAt} totalSeconds={voteTime} label="Vote time" accent="lilac" />
+              <Timer endsAt={voteEndsAt} totalSeconds={voteTime} label="Vote time" accent="pink" />
             )}
           </div>
         </div>
@@ -75,32 +76,45 @@ export default function QuadrantPhase({
         <div className="quadrant-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2.2fr) minmax(300px,1fr)', gap: 'var(--space-5)', alignItems: 'start' }}>
           <div>
             <div
+              key={quadrant}
+              className="quadrant-reveal-anim"
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+                gridTemplateColumns: `repeat(auto-fill, minmax(${isVote ? 180 : 150}px, 1fr))`,
                 gap: 'var(--space-4)',
               }}
             >
-              {players.map((p) => (
-                <div key={p.id} className="card" style={{ padding: 'var(--space-3)' }}>
-                  <RevealCanvas strokes={strokesByPlayer?.[p.id] || []} revealedQuadrants={revealedQuadrants} />
-                  <div style={{ marginTop: 'var(--space-2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <PlayerTag name={p.name} colorKey={p.colorKey} size="sm" />
-                    {phase === 'vote' && myVote === p.id && (
-                      <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--lilac-shade)' }}>Your vote</span>
+              {players.map((p) => {
+                const isMe = p.id === me?.id;
+                const votedForThem = isVote && myVote === p.id;
+                return (
+                  <div
+                    key={p.id}
+                    className={`card reveal-tile ${isVote && !isMe ? 'votable' : ''} ${votedForThem ? 'selected' : ''}`}
+                    style={{ padding: 'var(--space-3)' }}
+                    onClick={() => isVote && !isMe && castVote(p.id)}
+                  >
+                    <div className="canvas-mat" style={{ padding: 4 }}>
+                      <RevealCanvas strokes={strokesByPlayer?.[p.id] || []} revealedQuadrants={revealedQuadrants} />
+                    </div>
+                    <div style={{ marginTop: 'var(--space-2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <PlayerTag name={p.name} colorKey={p.colorKey} size="sm" />
+                      {votedForThem && (
+                        <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--violet-soft)' }}>Your vote</span>
+                      )}
+                    </div>
+                    {isVote && !isMe && (
+                      <button
+                        className={`btn btn-toggle ${votedForThem ? 'active' : ''}`}
+                        style={{ width: '100%', marginTop: 'var(--space-2)', padding: '8px 12px', fontSize: '0.85rem' }}
+                        onClick={(e) => { e.stopPropagation(); castVote(p.id); }}
+                      >
+                        {votedForThem ? '✓ Accused' : 'Accuse'}
+                      </button>
                     )}
                   </div>
-                  {phase === 'vote' && p.id !== me?.id && (
-                    <button
-                      className={`btn btn-toggle ${myVote === p.id ? 'active' : ''}`}
-                      style={{ width: '100%', marginTop: 'var(--space-2)', padding: '8px 12px', fontSize: '0.85rem' }}
-                      onClick={() => castVote(p.id)}
-                    >
-                      Accuse
-                    </button>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -108,9 +122,9 @@ export default function QuadrantPhase({
             {phase === 'discuss' && (
               <div className="card">
                 <button className={`btn btn-toggle ${myReady ? 'active' : ''}`} style={{ width: '100%' }} onClick={toggleReady}>
-                  {myReady ? '✓ Called a vote' : 'Call a Vote'}
+                  {myReady ? '✓ Called a vote' : '📣 Call a Vote'}
                 </button>
-                <p style={{ marginTop: 'var(--space-3)', fontWeight: 700, color: 'var(--ink-soft)', fontSize: '0.9rem', textAlign: 'center' }}>
+                <p style={{ marginTop: 'var(--space-3)', fontWeight: 600, color: 'var(--ink-soft)', fontSize: '0.9rem', textAlign: 'center' }}>
                   {readyInfo.readyCount}/{readyInfo.total} ready to vote
                 </p>
               </div>
@@ -118,11 +132,11 @@ export default function QuadrantPhase({
 
             {phase === 'vote' && (
               <div className="card">
-                <p style={{ fontWeight: 700, color: 'var(--ink-soft)', fontSize: '0.9rem', textAlign: 'center' }}>
+                <p style={{ fontWeight: 600, color: 'var(--ink-soft)', fontSize: '0.9rem', textAlign: 'center' }}>
                   {voteInfo.votedCount}/{voteInfo.total} voted
                 </p>
                 {myVote && (
-                  <p style={{ marginTop: 'var(--space-2)', textAlign: 'center', fontWeight: 700, color: 'var(--lilac-shade)', fontSize: '0.9rem' }}>
+                  <p style={{ marginTop: 'var(--space-2)', textAlign: 'center', fontWeight: 700, color: 'var(--violet-soft)', fontSize: '0.9rem' }}>
                     Tap another player to change your vote.
                   </p>
                 )}
@@ -140,10 +154,10 @@ export default function QuadrantPhase({
                         style={{
                           fontSize: '0.75rem',
                           fontWeight: 800,
-                          color: p.connected ? 'var(--sage-shade)' : 'var(--ink-soft)',
+                          color: p.connected ? 'var(--green)' : 'var(--ink-faint)',
                         }}
                       >
-                        {p.connected ? 'Connected' : 'Reconnecting…'}
+                        {p.connected ? '● Connected' : 'Reconnecting…'}
                       </span>
                     </div>
                   ))}
