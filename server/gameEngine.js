@@ -186,7 +186,7 @@ function tallyVotes(round) {
   return hasMajority ? topId : null;
 }
 
-const VOTE_REVEAL_PAUSE_MS = 3500;
+const RESULT_REVEAL_PAUSE_MS = 4000;
 
 function onVoteEnd(io, room) {
   room.clearTimer();
@@ -197,31 +197,47 @@ function onVoteEnd(io, room) {
 
   // Always exactly one of these three — the vote never resolves to
   // anything else, so the client never has a case to silently skip.
-  //   'caught'     — Case 1: the imposter won a majority
-  //   'wrong'      — Case 2: a crewmate won a majority
-  //   'noMajority' — Case 3: a tie, or nobody cleared 50%
-  let outcome;
-  if (accusedId === null) outcome = 'noMajority';
-  else if (accusedId === round.imposterId) outcome = 'caught';
-  else outcome = 'wrong';
+  //   IMPOSTOR_CAUGHT — Case A: the imposter won a majority
+  //   WRONG_PLAYER    — Case B: a crewmate won a majority
+  //   NO_EJECTION     — Case C: a tie, or nobody cleared 50%
+  let type;
+  let message;
+  if (accusedId === null) {
+    type = 'NO_EJECTION';
+    message = 'No one was ejected.';
+  } else if (accusedId === round.imposterId) {
+    type = 'IMPOSTOR_CAUGHT';
+    message = 'The Impostor was caught!';
+  } else {
+    type = 'WRONG_PLAYER';
+    message = 'The Impostor escaped.';
+  }
 
   room.phase = 'voteResult';
 
-  const voteResultPayload = {
-    outcome,
+  const roundResultPayload = {
+    type,
+    message,
     accusedId,
     accusedName: accused ? accused.name : null,
     accusedColorKey: accused ? accused.colorKey : null,
     quadrant: round.quadrant,
     isLastQuadrant,
   };
-  round.lastVoteResult = voteResultPayload;
+  // Backs both the live broadcast below AND the reconnect snapshot
+  // (roomSnapshot's `roundResult` field) — same object, same shape either
+  // way, so a client resyncing mid-result sees exactly what everyone else
+  // already got.
+  round.lastRoundResult = roundResultPayload;
 
-  toRoom(io, room).emit('voteResult', voteResultPayload);
+  toRoom(io, room).emit('ROUND_RESULT', roundResultPayload);
 
-  // Give everyone a beat to see the reveal (Among Us style) before moving on.
+  // The phase transition MUST wait until every client has had time to
+  // display the result screen — this single timer is what enforces that;
+  // nothing below fires until it elapses, so the game can never skip
+  // straight into the next round/quadrant.
   room.timerHandle = setTimeout(() => {
-    if (outcome === 'caught') {
+    if (type === 'IMPOSTOR_CAUGHT') {
       endRound(io, room, 'caught', accusedId);
     } else if (!isLastQuadrant) {
       // Wrong guess or no majority, but there's still another quadrant to
@@ -232,7 +248,7 @@ function onVoteEnd(io, room) {
       // Final quadrant with no correct accusation — the imposter gets away.
       endRound(io, room, 'escaped', accusedId);
     }
-  }, VOTE_REVEAL_PAUSE_MS);
+  }, RESULT_REVEAL_PAUSE_MS);
 }
 
 // Points are awarded by team, never per-vote: everyone on the winning team
@@ -340,8 +356,8 @@ export function roomSnapshot(room, playerId) {
       myReady: playerId ? round.ready?.has(playerId) || false : false,
       myDoneDrawing: playerId ? round.doneDrawing?.has(playerId) || false : false,
     };
-    if (room.phase === 'voteResult' && round.lastVoteResult) {
-      snap.voteResult = round.lastVoteResult;
+    if (room.phase === 'voteResult' && round.lastRoundResult) {
+      snap.roundResult = round.lastRoundResult;
     }
     if (room.phase === 'results' && round.lastResults) {
       snap.results = round.lastResults;
