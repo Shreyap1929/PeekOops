@@ -8,44 +8,33 @@ export default function RoleReveal({ isImposter, word, roundNumber, onDone }) {
     return () => clearTimeout(t);
   }, [onDone]);
 
-  const bg = isImposter ? '#E4402F' : 'var(--sage-base)';
+  const burst = isImposter
+    ? 'radial-gradient(circle at 50% 36%, rgba(251,113,133,0.85), rgba(190,24,73,0.55) 45%, #2A0A15 82%)'
+    : 'radial-gradient(circle at 50% 36%, rgba(52,211,153,0.8), rgba(6,95,70,0.55) 45%, #06231C 82%)';
 
   return (
     <div
-      className="phase-fade"
+      className="spotlight-screen phase-fade"
       onClick={onDone}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onDone()}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: bg,
-        color: 'white',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        textAlign: 'center',
-        padding: 'var(--space-6)',
-        zIndex: 40,
-        cursor: 'pointer',
-      }}
+      style={{ '--burst': burst, cursor: 'pointer' }}
     >
-      <div style={{ fontSize: '3.4rem', marginBottom: 'var(--space-4)' }}>{isImposter ? '🎭' : '🎨'}</div>
+      <div className="spotlight-icon">{isImposter ? '🎭' : '🎨'}</div>
       <h1 style={{ fontSize: 'clamp(1.8rem, 6vw, 3rem)', marginBottom: 'var(--space-4)' }}>
-        {isImposter ? "YOU ARE THE IMPOSTOR" : 'YOU ARE A CREWMATE'}
+        {isImposter ? "YOU ARE THE IMPOSTER" : 'YOU ARE A CREWMATE'}
       </h1>
       <p style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(1.6rem, 5vw, 2.4rem)', fontWeight: 700, marginBottom: 'var(--space-4)' }}>
         {word}
       </p>
       {!isImposter && (
-        <p style={{ fontWeight: 700, opacity: 0.9, maxWidth: 420 }}>
+        <p style={{ fontWeight: 600, opacity: 0.92, maxWidth: 420 }}>
           Draw it so your team can guess — don't give it away.
         </p>
       )}
       {isImposter && (
-        <p style={{ fontWeight: 700, opacity: 0.9, maxWidth: 420 }}>
+        <p style={{ fontWeight: 600, opacity: 0.92, maxWidth: 420 }}>
           Your word is close, but not the same. Blend in.
         </p>
       )}
