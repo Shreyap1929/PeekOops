@@ -3,34 +3,35 @@ import PlayerTag from '../components/PlayerTag.jsx';
 export default function VoteResult({ result }) {
   if (!result) return null;
 
-  // outcome is always exactly one of these three — set unconditionally by
-  // the server, so there's no combination of fields here that falls
-  // through without a screen.
-  const { accusedId, accusedName, accusedColorKey, outcome, isLastQuadrant } = result;
+  // type is always exactly one of these three — set unconditionally by the
+  // server, so there's no combination of fields here that falls through
+  // without a screen. message is server-authored too, so the wording lives
+  // in one place (gameEngine.js) instead of being duplicated here.
+  const { accusedId, accusedName, accusedColorKey, type, message, isLastQuadrant } = result;
 
   let bg = 'var(--sunshine-base)';
   let emoji = '🤷';
-  let headline = 'No one was ejected.';
+  let headline = message; // NO_EJECTION: "No one was ejected."
   let sub = 'The vote was too split to reach a majority.';
   let caption = null;
 
-  if (outcome === 'caught') {
-    // Case 1 — victory screen.
+  if (type === 'IMPOSTOR_CAUGHT') {
+    // Case A — victory screen.
     bg = 'var(--sage-base)';
     emoji = '✅';
-    headline = 'The Impostor was caught!';
+    headline = message; // "The Impostor was caught!"
     sub = 'Victory for the crew — the round ends here.';
-  } else if (outcome === 'wrong') {
-    // Case 2.
+  } else if (type === 'WRONG_PLAYER') {
+    // Case B.
     bg = '#E4402F';
     emoji = '❌';
     headline = 'An innocent crewmate was ejected.';
-    sub = 'The Impostor escaped!';
+    sub = message; // "The Impostor escaped."
     caption = isLastQuadrant
       ? null
       : 'The real imposter is still out there — on to the next quadrant…';
   }
-  // outcome === 'noMajority' (Case 3) keeps the defaults above — nobody is
+  // type === 'NO_EJECTION' (Case C) keeps the defaults above — nobody is
   // shown as accused and no player is removed from the game.
 
   return (
@@ -52,7 +53,7 @@ export default function VoteResult({ result }) {
     >
       <div style={{ fontSize: '3.4rem', marginBottom: 'var(--space-4)' }}>{emoji}</div>
 
-      {outcome !== 'noMajority' && accusedId && (
+      {type !== 'NO_EJECTION' && accusedId && (
         <div style={{ marginBottom: 'var(--space-4)', transform: 'scale(1.3)' }}>
           <PlayerTag name={accusedName} colorKey={accusedColorKey} size="lg" />
         </div>
