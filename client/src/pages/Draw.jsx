@@ -2,7 +2,24 @@ import { useEffect, useRef, useState } from 'react';
 import DrawCanvas from '../components/DrawCanvas.jsx';
 import PlayerTag from '../components/PlayerTag.jsx';
 import Timer from '../components/Timer.jsx';
-import { accentBase } from '../data/colors.js';
+import { ACCENTS, accentBase } from '../data/colors.js';
+
+// Small, fixed drawing palette — reuses the app's existing accent colors
+// (data/colors.js, already themed throughout the UI) plus the app's own
+// ink color as the default "black", instead of inventing a new, unrelated
+// color system just for the canvas.
+const PALETTE = [
+  { key: 'ink', hex: '#2B2A28' },
+  ...Object.entries(ACCENTS).map(([key, a]) => ({ key, hex: a.base })),
+];
+
+// Brush size presets. Values are raw canvas lineWidth px — the same unit
+// the canvas already used for its old hardcoded strokeWidth={5}.
+const BRUSH_SIZES = [
+  { key: 'S', value: 3 },
+  { key: 'M', value: 5 },
+  { key: 'L', value: 9 },
+];
 
 export default function Draw({
   word,
@@ -20,8 +37,12 @@ export default function Draw({
   resyncToken,
 }) {
   const clearRef = useRef(null);
-  const color = accentBase(myColorKey);
+  const undoRef = useRef(null);
+  const defaultColor = accentBase(myColorKey);
   const [myDone, setMyDone] = useState(initialDone);
+  const [selectedColor, setSelectedColor] = useState(defaultColor);
+  const [selectedWidth, setSelectedWidth] = useState(BRUSH_SIZES[1].value);
+  const [hasStrokes, setHasStrokes] = useState((initialStrokes || []).length > 0);
 
   // A resync (rejoin) can land us back on the same draw phase we were
   // already in — restore "I already clicked Done Drawing" instead of
@@ -51,12 +72,57 @@ export default function Draw({
               Draw: <span style={{ color: isImposter ? '#E4402F' : 'var(--sage-shade)' }}>{word}</span>
             </h2>
           </div>
-          <button className="btn btn-secondary" onClick={() => clearRef.current?.()}>
-            Clear
-          </button>
+          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+            <button
+              className="btn btn-secondary"
+              onClick={() => undoRef.current?.()}
+              disabled={!hasStrokes}
+            >
+              ↩️ Undo
+            </button>
+            <button className="btn btn-secondary" onClick={() => clearRef.current?.()}>
+              Clear
+            </button>
+          </div>
         </div>
 
         <Timer endsAt={drawEndsAt} totalSeconds={drawTime} label="Time to draw" accent="coral" />
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-4)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            {PALETTE.map((c) => (
+              <button
+                key={c.key}
+                onClick={() => setSelectedColor(c.hex)}
+                aria-label={`Use ${c.key} color`}
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: '50%',
+                  background: c.hex,
+                  border: selectedColor === c.hex ? '3px solid var(--ink)' : '2px solid #EAE3D3',
+                  boxShadow: selectedColor === c.hex ? '0 0 0 3px rgba(43,42,40,0.12)' : 'none',
+                  cursor: 'pointer',
+                  padding: 0,
+                }}
+              />
+            ))}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            {BRUSH_SIZES.map((b) => (
+              <button
+                key={b.key}
+                className={`btn btn-toggle ${selectedWidth === b.value ? 'active' : ''}`}
+                style={{ padding: '8px 14px', minWidth: 44 }}
+                onClick={() => setSelectedWidth(b.value)}
+                aria-label={`Brush size ${b.key}`}
+              >
+                {b.key}
+              </button>
+            ))}
+          </div>
+        </div>
 
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-3)' }}>
           <button
@@ -83,7 +149,15 @@ export default function Draw({
         </div>
 
         <div style={{ flex: 1, minHeight: 320 }}>
-          <DrawCanvas color={color} strokeWidth={5} onStrokeChunk={onStrokeChunk} onClear={clearRef} initialStrokes={initialStrokes} />
+          <DrawCanvas
+            color={selectedColor}
+            strokeWidth={selectedWidth}
+            onStrokeChunk={onStrokeChunk}
+            onClear={clearRef}
+            onUndo={undoRef}
+            onStrokeCountChange={(count) => setHasStrokes(count > 0)}
+            initialStrokes={initialStrokes}
+          />
         </div>
         <p style={{ textAlign: 'center', color: 'var(--ink-soft)', fontWeight: 700, fontSize: '0.85rem' }}>
           Only you can see this canvas until the reveal.
