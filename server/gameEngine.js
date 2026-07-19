@@ -315,9 +315,10 @@ export function addStrokeChunk(room, playerId, chunk) {
 
 // Marks a player as finished drawing. One-way: once set, a player can never
 // be un-marked, and clicking again is a harmless no-op (guards against
-// double-clicks or a client retrying the emit). This intentionally does
-// NOT check whether everyone is done or advance the round in any way —
-// auto-advancing on full completion is a separate feature, handled later.
+// double-clicks or a client retrying the emit). Once every active player has
+// marked done, there's no reason to keep waiting on the draw timer — cut it
+// short and move straight to the first quadrant reveal, same as how
+// toggleReady/submitVote already short-circuit their own timers early.
 export function markDoneDrawing(io, room, playerId) {
   if (room.phase !== 'draw' || !room.round) return;
   const round = room.round;
@@ -325,10 +326,17 @@ export function markDoneDrawing(io, room, playerId) {
   if (round.doneDrawing.has(playerId)) return; // already marked — ignore repeat clicks
 
   round.doneDrawing.add(playerId);
+  const total = room.connectedPlayers.length;
   toRoom(io, room).emit('doneDrawingUpdate', {
     doneIds: [...round.doneDrawing],
-    total: room.connectedPlayers.length,
+    total,
   });
+
+  // Everyone active has finished — no need to wait out the draw timer.
+  if (total > 0 && round.doneDrawing.size >= total) {
+    room.clearTimer(); // cancels the setTimeout(advanceToQuadrant, drawTime) from startRound
+    advanceToQuadrant(io, room, 1); // same function the draw timer's own callback would have called
+  }
 }
 
 export function roomSnapshot(room, playerId) {
