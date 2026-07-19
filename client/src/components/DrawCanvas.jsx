@@ -3,7 +3,21 @@ import { setupHiDPICanvas, drawStrokesFull, drawQuadrantGuides } from '../canvas
 
 const EMIT_INTERVAL_MS = 70;
 
-export default function DrawCanvas({ color, strokeWidth = 5, disabled, onStrokeChunk, onClear, initialStrokes }) {
+// Matches the solid white background this canvas (and the shared
+// RevealCanvas) sit on — see the container's `background: 'white'` below.
+// Used only by undoLast() below.
+const CANVAS_BG = '#FFFFFF';
+
+export default function DrawCanvas({
+  color,
+  strokeWidth = 5,
+  disabled,
+  onStrokeChunk,
+  onClear,
+  onUndo,
+  onStrokeCountChange,
+  initialStrokes,
+}) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
   const ctxRef = useRef(null);
@@ -26,7 +40,14 @@ export default function DrawCanvas({ color, strokeWidth = 5, disabled, onStrokeC
     drawStrokesFull(ctx, strokesRef.current, w, h);
     drawQuadrantGuides(ctx, w, h);
   };
-  
+
+  // Lets the parent (Draw.jsx) know how many strokes currently exist, so it
+  // can enable/disable its Undo button — purely a UI convenience, no effect
+  // on drawing or networking.
+  const reportStrokeCount = () => {
+    onStrokeCountChange?.(strokesRef.current.length);
+  };
+
   useEffect(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
@@ -42,6 +63,7 @@ export default function DrawCanvas({ color, strokeWidth = 5, disabled, onStrokeC
 
     const ro = new ResizeObserver(resize);
     ro.observe(container);
+    reportStrokeCount(); // initial count (e.g. seeded from a resync's initialStrokes)
     return () => ro.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -90,6 +112,7 @@ export default function DrawCanvas({ color, strokeWidth = 5, disabled, onStrokeC
     isFirstChunkRef.current = true;
 
     redraw();
+    reportStrokeCount();
     flushTimerRef.current = setInterval(flush, EMIT_INTERVAL_MS);
   };
 
@@ -127,15 +150,63 @@ export default function DrawCanvas({ color, strokeWidth = 5, disabled, onStrokeC
     activeStrokeRef.current = null;
   };
 
+  // Removes only this player's own most recent stroke — never anyone
+  // else's, since strokesRef only ever holds this player's own strokes to
+  // begin with (each player draws on their own private canvas). One-way,
+  // mirrors the existing Clear button's onClear pattern below.
+  const undoLast = () => {
+    if (disabled) return;
+    if (activeStrokeRef.current) return; // don't undo mid-stroke
+    const strokes = strokesRef.current;
+    if (strokes.length === 0) return;
+
+    const removed = strokes.pop();
+    redraw();
+    reportStrokeCount();
+
+    // By the time Undo is clickable, the removed stroke has almost
+    // certainly already been streamed to the server — flush() sends
+    // synchronously on pointerup, before this button is even usable — and
+    // the server's addStrokeChunk only ever appends; it has no
+    // delete/replace op, and this pass isn't touching server or
+    // wire-schema code. So instead of deleting anything, we reuse the
+    // *existing* strokeChunk channel (same shape flush() already sends:
+    // strokeId/color/width/points/newStroke) to send one more ordinary
+    // stroke that exactly retraces the removed one in the canvas's own
+    // background color. The receiving side doesn't need to know anything
+    // special happened — it just renders one more stroke, which visually
+    // paints over (cancels out) the one underneath it, everywhere that
+    // stroke is later revealed. This keeps every other player's reveal in
+    // sync with what this player now sees, with zero networking changes.
+    if (onStrokeChunk && removed.points?.length) {
+      strokeCounterRef.current += 1;
+      onStrokeChunk({
+        strokeId: `${removed.id}-undo-${strokeCounterRef.current}`,
+        color: CANVAS_BG,
+        width: (removed.width || 4) + 4,
+        points: removed.points,
+        newStroke: true,
+      });
+    }
+  };
+
   useEffect(() => {
     if (onClear) {
       onClear.current = () => {
         strokesRef.current = [];
         redraw();
+        reportStrokeCount();
       };
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onClear]);
+
+  useEffect(() => {
+    if (onUndo) {
+      onUndo.current = undoLast;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onUndo]);
 
   return (
     <div
