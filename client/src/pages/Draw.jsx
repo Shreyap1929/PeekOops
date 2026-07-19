@@ -65,11 +65,11 @@ export default function Draw({
       <div className="wide" style={{ paddingTop: 'var(--space-5)', paddingBottom: 'var(--space-5)', flex: 1, display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)' }}>
           <div>
-            <p style={{ fontWeight: 800, color: 'var(--ink-soft)', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            <p style={{ fontWeight: 800, color: 'var(--cyan-soft)', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
               Round {roundNumber} · Draw
             </p>
             <h2 style={{ fontSize: '1.6rem' }}>
-              Draw: <span style={{ color: isImposter ? '#E4402F' : 'var(--sage-shade)' }}>{word}</span>
+              Draw: <span style={{ color: isImposter ? 'var(--pink)' : 'var(--green)' }}>{word}</span>
             </h2>
           </div>
           <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
@@ -81,14 +81,25 @@ export default function Draw({
               ↩️ Undo
             </button>
             <button className="btn btn-secondary" onClick={() => clearRef.current?.()}>
-              Clear
+              🗑️ Clear
             </button>
           </div>
         </div>
 
-        <Timer endsAt={drawEndsAt} totalSeconds={drawTime} label="Time to draw" accent="coral" />
+        <Timer endsAt={drawEndsAt} totalSeconds={drawTime} label="Time to draw" accent="violet" />
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-4)' }}>
+        {/* Toolbar dock — a single glass strip for color + brush size, so it
+            reads as one professional drawing tool rather than loose buttons. */}
+        <div
+          className="card"
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            gap: 'var(--space-5)',
+            padding: 'var(--space-3) var(--space-4)',
+          }}
+        >
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
             {PALETTE.map((c) => (
               <button
@@ -96,18 +107,22 @@ export default function Draw({
                 onClick={() => setSelectedColor(c.hex)}
                 aria-label={`Use ${c.key} color`}
                 style={{
-                  width: 28,
-                  height: 28,
+                  width: 30,
+                  height: 30,
                   borderRadius: '50%',
                   background: c.hex,
-                  border: selectedColor === c.hex ? '3px solid var(--ink)' : '2px solid #EAE3D3',
-                  boxShadow: selectedColor === c.hex ? '0 0 0 3px rgba(43,42,40,0.12)' : 'none',
+                  border: selectedColor === c.hex ? '2px solid white' : '2px solid rgba(255,255,255,0.15)',
+                  boxShadow: selectedColor === c.hex ? `0 0 0 3px ${c.hex}55, 0 0 14px ${c.hex}77` : 'none',
                   cursor: 'pointer',
                   padding: 0,
+                  transition: 'transform 0.12s ease, box-shadow 0.15s ease',
+                  transform: selectedColor === c.hex ? 'scale(1.12)' : 'scale(1)',
                 }}
               />
             ))}
           </div>
+
+          <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--line)' }} />
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
             {BRUSH_SIZES.map((b) => (
@@ -122,9 +137,9 @@ export default function Draw({
               </button>
             ))}
           </div>
-        </div>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-3)' }}>
+          <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--line)' }} />
+
           <button
             className={`btn btn-toggle ${myDone ? 'active' : ''}`}
             style={{ padding: '10px 20px' }}
@@ -134,12 +149,12 @@ export default function Draw({
             {myDone ? '✅ Done!' : '🔔 Done Drawing'}
           </button>
 
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)', marginLeft: 'auto' }}>
             {players.map((p) => (
               <span key={p.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                 <PlayerTag name={p.name} colorKey={p.colorKey} size="sm" muted={!doneIds.has(p.id)} />
                 {doneIds.has(p.id) && (
-                  <span style={{ color: 'var(--sage-shade)', fontWeight: 800, fontSize: '0.9rem' }} aria-label="Done drawing">
+                  <span style={{ color: 'var(--green)', fontWeight: 800, fontSize: '0.9rem' }} aria-label="Done drawing">
                     ✓
                   </span>
                 )}
@@ -148,7 +163,7 @@ export default function Draw({
           </div>
         </div>
 
-        <div style={{ flex: 1, minHeight: 320 }}>
+        <div className="canvas-mat" style={{ flex: 1, minHeight: 320 }}>
           <DrawCanvas
             color={selectedColor}
             strokeWidth={selectedWidth}
@@ -159,7 +174,7 @@ export default function Draw({
             initialStrokes={initialStrokes}
           />
         </div>
-        <p style={{ textAlign: 'center', color: 'var(--ink-soft)', fontWeight: 700, fontSize: '0.85rem' }}>
+        <p style={{ textAlign: 'center', color: 'var(--ink-faint)', fontWeight: 600, fontSize: '0.85rem' }}>
           Only you can see this canvas until the reveal.
         </p>
       </div>
