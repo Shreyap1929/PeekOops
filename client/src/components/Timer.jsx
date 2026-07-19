@@ -1,11 +1,32 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { playSound } from '../sound.js';
 
 export default function Timer({ endsAt, totalSeconds, label, accent = 'sky' }) {
   const [remainingMs, setRemainingMs] = useState(() => Math.max(0, (endsAt || 0) - Date.now()));
+  // Guards the countdown sound so it fires exactly once per timer
+  // instance (i.e. once per endsAt), not on every ~200ms tick while the
+  // remaining time stays inside the last-5-seconds window.
+  const countdownFiredRef = useRef(false);
 
   useEffect(() => {
+    countdownFiredRef.current = false;
     if (!endsAt) return undefined;
-    const tick = () => setRemainingMs(Math.max(0, endsAt - Date.now()));
+    const tick = () => {
+      const ms = Math.max(0, endsAt - Date.now());
+      setRemainingMs(ms);
+      // Computed fresh from Date.now() right here — deliberately not
+      // derived from remainingSec/low below, which can briefly still hold
+      // the PREVIOUS endsAt's value during the same render this effect
+      // resets on (e.g. discuss timer hands off to vote timer on the same
+      // Timer instance). Using the fresh value here means the one-shot
+      // fire is always judged against the timer this effect actually just
+      // (re)started, never a leftover from the one before it.
+      const sec = Math.ceil(ms / 1000);
+      if (sec <= 5 && sec > 0 && !countdownFiredRef.current) {
+        countdownFiredRef.current = true;
+        playSound('countdown');
+      }
+    };
     tick();
     const id = setInterval(tick, 200);
     return () => clearInterval(id);
