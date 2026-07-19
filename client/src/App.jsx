@@ -38,6 +38,7 @@ export default function App() {
   const [roundYou, setRoundYou] = useState({ isImposter: false, word: '' });
   const [drawEndsAt, setDrawEndsAt] = useState(null);
   const [initialStrokes, setInitialStrokes] = useState([]);
+  const [doneDrawingInfo, setDoneDrawingInfo] = useState({ doneIds: [], total: 0 });
 
   const [quadrant, setQuadrant] = useState(0);
   const [strokesByPlayer, setStrokesByPlayer] = useState({});
@@ -52,6 +53,7 @@ export default function App() {
   // vote" / "you already voted for X" instead of quietly forgetting it.
   const [myReadySeed, setMyReadySeed] = useState(false);
   const [myVoteSeed, setMyVoteSeed] = useState(null);
+  const [myDoneSeed, setMyDoneSeed] = useState(false);
   const [resyncToken, setResyncToken] = useState(0);
 
   const playersRef = useRef(players);
@@ -88,11 +90,13 @@ export default function App() {
         setVoteEndsAt(res.round.voteEndsAt || null);
         setReadyInfo(res.round.readyInfo || { readyCount: 0, total: res.players.length, readyIds: [] });
         setVoteInfo(res.round.voteInfo || { votedCount: 0, total: res.players.length });
+        setDoneDrawingInfo(res.round.doneDrawingInfo || { doneIds: [], total: res.players.length });
         setMyReadySeed(!!res.round.myReady);
         setMyVoteSeed(res.round.myVote ?? null);
+        setMyDoneSeed(!!res.round.myDoneDrawing);
         setResyncToken((t) => t + 1);
       }
-      if (res.voteResult) setVoteResultInfo(res.voteResult);
+      if (res.roundResult) setVoteResultInfo(res.roundResult);
       if (res.results) setResults(res.results);
     }
 
@@ -151,9 +155,11 @@ export default function App() {
       setResults(null);
       setReadyInfo({ readyCount: 0, total: playersRef.current.length, readyIds: [] });
       setVoteInfo({ votedCount: 0, total: playersRef.current.length });
+      setDoneDrawingInfo({ doneIds: [], total: playersRef.current.length });
       setVoteResultInfo(null);
       setMyReadySeed(false);
       setMyVoteSeed(null);
+      setMyDoneSeed(false);
       setResyncToken((t) => t + 1);
       setShowReveal(true);
     };
@@ -171,6 +177,8 @@ export default function App() {
 
     const onReadyUpdate = (payload) => setReadyInfo(payload);
 
+    const onDoneDrawingUpdate = (payload) => setDoneDrawingInfo(payload);
+
     const onVoteStart = (payload) => {
       setPhase('vote');
       setVoteEndsAt(payload.voteEndsAt);
@@ -182,7 +190,7 @@ export default function App() {
 
     const onVoteUpdate = (payload) => setVoteInfo(payload);
 
-    const onVoteResult = (payload) => {
+    const onRoundResult = (payload) => {
       setPhase('voteResult');
       setVoteResultInfo(payload);
     };
@@ -201,9 +209,10 @@ export default function App() {
     socket.on('roundStart', onRoundStart);
     socket.on('quadrantReveal', onQuadrantReveal);
     socket.on('readyUpdate', onReadyUpdate);
+    socket.on('doneDrawingUpdate', onDoneDrawingUpdate);
     socket.on('voteStart', onVoteStart);
     socket.on('voteUpdate', onVoteUpdate);
-    socket.on('voteResult', onVoteResult);
+    socket.on('ROUND_RESULT', onRoundResult);
     socket.on('results', onResults);
     socket.on('error', onServerError);
 
@@ -216,9 +225,10 @@ export default function App() {
       socket.off('roundStart', onRoundStart);
       socket.off('quadrantReveal', onQuadrantReveal);
       socket.off('readyUpdate', onReadyUpdate);
+      socket.off('doneDrawingUpdate', onDoneDrawingUpdate);
       socket.off('voteStart', onVoteStart);
       socket.off('voteUpdate', onVoteUpdate);
-      socket.off('voteResult', onVoteResult);
+      socket.off('ROUND_RESULT', onRoundResult);
       socket.off('results', onResults);
       socket.off('error', onServerError);
     };
@@ -265,6 +275,7 @@ export default function App() {
   const startGame = () => socket.emit('startGame', { roomCode });
   const nextRound = () => socket.emit('nextRound', { roomCode });
   const sendStrokeChunk = (chunk) => socket.emit('strokeChunk', { roomCode, ...chunk });
+  const sendDoneDrawing = () => socket.emit('markDoneDrawing', { roomCode });
   const toggleReady = (ready) => socket.emit('toggleReady', { roomCode, ready });
   const submitVote = (votedId) => socket.emit('submitVote', { roomCode, votedId });
 
@@ -325,6 +336,11 @@ export default function App() {
           roundNumber={roundNumber}
           initialStrokes={initialStrokes}
           onStrokeChunk={sendStrokeChunk}
+          players={players}
+          doneDrawingInfo={doneDrawingInfo}
+          onDoneDrawing={sendDoneDrawing}
+          initialDone={myDoneSeed}
+          resyncToken={resyncToken}
         />
       )}
 
