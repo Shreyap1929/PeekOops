@@ -286,21 +286,7 @@ export default function App() {
   return (
     <>
       {(showBanner || resyncing) && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            background: '#E4402F',
-            color: 'white',
-            textAlign: 'center',
-            fontWeight: 800,
-            fontSize: '0.85rem',
-            padding: '6px',
-            zIndex: 100,
-          }}
-        >
+        <div className="reconnect-banner pulse">
           Reconnecting to the game server…
         </div>
       )}
