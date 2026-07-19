@@ -29,12 +29,14 @@ export default function Lobby({ roomCode, players, hostId, me, settings, onUpdat
       <div className="wide" style={{ paddingTop: 'var(--space-6)', paddingBottom: 'var(--space-8)', flex: 1 }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-4)', marginBottom: 'var(--space-6)' }}>
           <div>
-            <h1 style={{ fontSize: '2rem' }}>Lobby</h1>
-            <p style={{ color: 'var(--ink-soft)', fontWeight: 700 }}>Waiting for everyone to join</p>
+            <p style={{ fontWeight: 800, color: 'var(--cyan-soft)', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              Lobby
+            </p>
+            <h1 style={{ fontSize: '2rem' }}>Waiting for everyone to join</h1>
           </div>
           <button className="btn btn-secondary" onClick={copyCode} title="Copy room code">
             Room code&nbsp;
-            <span style={{ fontFamily: 'var(--font-display)', letterSpacing: '0.2em', color: 'var(--coral-shade)' }}>{roomCode}</span>
+            <span style={{ fontFamily: 'var(--font-display)', letterSpacing: '0.25em', color: 'var(--violet-soft)' }}>{roomCode}</span>
             &nbsp;{copied ? '✓' : '⧉'}
           </button>
         </div>
@@ -50,24 +52,9 @@ export default function Lobby({ roomCode, players, hostId, me, settings, onUpdat
               }}
             >
               {players.map((p) => (
-                <div
-                  key={p.id}
-                  className={`accent-${p.colorKey}`}
-                  style={{
-                    background: `var(--dot-tint)`,
-                    borderRadius: 'var(--radius-md)',
-                    padding: 'var(--space-3) var(--space-4)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                  }}
-                >
+                <div key={p.id} className={`accent-${p.colorKey} player-chip`}>
                   <PlayerTag name={p.name} colorKey={p.colorKey} />
-                  {p.id === hostId && (
-                    <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--ink-soft)', textTransform: 'uppercase' }}>
-                      Host
-                    </span>
-                  )}
+                  {p.id === hostId && <span className="badge">Host</span>}
                 </div>
               ))}
             </div>
@@ -76,16 +63,16 @@ export default function Lobby({ roomCode, players, hostId, me, settings, onUpdat
               {isHost ? (
                 <>
                   <button className="btn btn-primary" style={{ width: '100%' }} disabled={!canStart} onClick={onStart}>
-                    Start Game
+                    🚀 Start Game
                   </button>
                   {!canStart && (
-                    <p style={{ marginTop: 'var(--space-2)', fontWeight: 700, color: 'var(--coral-shade)', fontSize: '0.9rem' }}>
+                    <p style={{ marginTop: 'var(--space-2)', fontWeight: 700, color: 'var(--pink)', fontSize: '0.9rem' }}>
                       Need at least 3 players to start ({count}/3)
                     </p>
                   )}
                 </>
               ) : (
-                <p style={{ fontWeight: 700, color: 'var(--ink-soft)' }}>
+                <p style={{ fontWeight: 600, color: 'var(--ink-soft)' }}>
                   {canStart ? 'Waiting for the host to start…' : `Need at least 3 players to start (${count}/3)`}
                 </p>
               )}
@@ -94,27 +81,31 @@ export default function Lobby({ roomCode, players, hostId, me, settings, onUpdat
 
           <div className="card">
             <h3 style={{ marginBottom: 'var(--space-4)' }}>Round settings</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-              {SETTINGS_META.map((s) => (
-                <div className="slider-row" key={s.key}>
-                  <div className="slider-label">
-                    <span>{s.label}</span>
-                    <span className="slider-value">{settings[s.key]}s</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
+              {SETTINGS_META.map((s) => {
+                const pct = ((settings[s.key] - s.min) / (s.max - s.min)) * 100;
+                return (
+                  <div className="slider-row" key={s.key}>
+                    <div className="slider-label">
+                      <span>{s.label}</span>
+                      <span className="slider-value">{settings[s.key]}s</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={s.min}
+                      max={s.max}
+                      step={1}
+                      value={settings[s.key]}
+                      disabled={!isHost}
+                      onChange={(e) => handleSlider(s.key, e.target.value)}
+                      style={{ '--fill': `${pct}%` }}
+                    />
                   </div>
-                  <input
-                    type="range"
-                    min={s.min}
-                    max={s.max}
-                    step={1}
-                    value={settings[s.key]}
-                    disabled={!isHost}
-                    onChange={(e) => handleSlider(s.key, e.target.value)}
-                  />
-                </div>
-              ))}
+                );
+              })}
             </div>
             {!isHost && (
-              <p style={{ marginTop: 'var(--space-3)', fontSize: '0.85rem', color: 'var(--ink-soft)' }}>
+              <p style={{ marginTop: 'var(--space-4)', fontSize: '0.85rem', color: 'var(--ink-soft)' }}>
                 Only the host can change settings.
               </p>
             )}
