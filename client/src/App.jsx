@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { socket } from './socket.js';
 import { DEFAULT_SETTINGS } from './data/settingsMeta.js';
 import { getClientId, saveSession, loadSession, clearSession } from './session.js';
+import { playSound, useSoundPreference } from './sound.js';
 
 import Landing from './pages/Landing.jsx';
 import Lobby from './pages/Lobby.jsx';
@@ -55,6 +56,7 @@ export default function App() {
   const [myVoteSeed, setMyVoteSeed] = useState(null);
   const [myDoneSeed, setMyDoneSeed] = useState(false);
   const [resyncToken, setResyncToken] = useState(0);
+  const [soundEnabled, setSoundEnabled] = useSoundPreference();
 
   const playersRef = useRef(players);
   playersRef.current = players;
@@ -173,6 +175,7 @@ export default function App() {
       setMyReadySeed(false);
       setMyVoteSeed(null);
       setResyncToken((t) => t + 1);
+      playSound('reveal');
     };
 
     const onReadyUpdate = (payload) => setReadyInfo(payload);
@@ -198,6 +201,10 @@ export default function App() {
     const onResults = (payload) => {
       setPhase('results');
       setResults(payload);
+      // outcome is always exactly 'caught' or 'escaped' (see endRound in
+      // server/gameEngine.js) — no new field, just reusing what's already
+      // on this payload.
+      playSound(payload.outcome === 'caught' ? 'crewWin' : 'impostorWin');
     };
 
     const onServerError = (payload) => setErrorMsg(payload?.message || 'Something went wrong.');
@@ -275,9 +282,15 @@ export default function App() {
   const startGame = () => socket.emit('startGame', { roomCode });
   const nextRound = () => socket.emit('nextRound', { roomCode });
   const sendStrokeChunk = (chunk) => socket.emit('strokeChunk', { roomCode, ...chunk });
-  const sendDoneDrawing = () => socket.emit('markDoneDrawing', { roomCode });
+  const sendDoneDrawing = () => {
+    playSound('doneDrawing');
+    socket.emit('markDoneDrawing', { roomCode });
+  };
   const toggleReady = (ready) => socket.emit('toggleReady', { roomCode, ready });
-  const submitVote = (votedId) => socket.emit('submitVote', { roomCode, votedId });
+  const submitVote = (votedId) => {
+    playSound('vote');
+    socket.emit('submitVote', { roomCode, votedId });
+  };
 
   if (screen === 'landing') {
     return <Landing onCreateRoom={createRoom} onJoinRoom={joinRoom} errorMsg={errorMsg} busy={busy} />;
@@ -285,6 +298,24 @@ export default function App() {
 
   return (
     <>
+      <button
+        onClick={() => setSoundEnabled(!soundEnabled)}
+        aria-label={soundEnabled ? 'Mute sound effects' : 'Unmute sound effects'}
+        title={soundEnabled ? 'Sound: On' : 'Sound: Off'}
+        className="btn btn-ghost"
+        style={{
+          position: 'fixed',
+          bottom: 16,
+          right: 16,
+          zIndex: 90,
+          background: 'white',
+          boxShadow: 'var(--shadow-soft)',
+          padding: '10px 14px',
+        }}
+      >
+        {soundEnabled ? '🔊' : '🔇'}
+      </button>
+
       {(showBanner || resyncing) && (
         <div className="reconnect-banner pulse">
           Reconnecting to the game server…
